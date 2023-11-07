@@ -8,7 +8,7 @@ import os
 warnings.filterwarnings("ignore")
 
 def main():
-    url = "https://api-testnet.bybit.com/derivatives/v3/public/risk-limit/list"
+    url = "https://api.bybit.com/derivatives/v3/public/risk-limit/list"
     print("Start Downloading Bybit Data")
     response = requests.request("GET", url)
     bybit = pd.DataFrame(response.json()['result']['list'])
