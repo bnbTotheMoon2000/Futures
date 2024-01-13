@@ -2,10 +2,27 @@ import pandas as pd
 import requests 
 
 def main():
+    def get_decimalNumber(decimal_str):
+    '''Function to get number of decimals'''
+    # split 
+    parts = decimal_str.split('.')
+
+    # handle decimal points
+    if len(parts) > 1:
+        decimal_part = parts[1]  # get decimal parts
+        decimal_part = decimal_part.rstrip('0')  # strip zero 
+        count = len(decimal_part)  # calculate len
+    else:
+        count = 0  # return 0, if no decimals
+    return count 
+    
     # get exchange info data, all UM trading symbols
     exchangeInfo_url = "https://fapi.binance.com/fapi/v1/exchangeInfo"
     exchangeInfo = [x for x in requests.get(exchangeInfo_url).json()['symbols'] if x['status']=='TRADING']
     mkt_cap = pd.DataFrame([{'symbol':x['symbol'],'mkt_cap':y['maxQty']} for x in exchangeInfo for y in x['filters'] if y['filterType']=='MARKET_LOT_SIZE'])
+    tick = pd.DataFrame([{'symbol':x['symbol'],'tickSize':y['tickSize']} for x in exchangeInfo for y in x['filters'] if y['filterType']=='PRICE_FILTER'])
+    mkt_cap = pd.merge(mkt_cap,tick,on='symbol')
+    mkt_cap['tickSize'] = mkt_cap['tickSize'].apply(get_decimalNumber)
     
     result_container = []
     error_container = pd.DataFrame()
@@ -57,7 +74,22 @@ def main():
             up_tier = down['tier']
             down_agg_qty = round(depth.iat[depth[(depth['bidQty_cum'] <= cap)].iloc[-1,:].name,7],2)
             up_agg_qty = round(depth.iat[depth[(depth['askQty_cum'] <= cap)].iloc[-1,:].name,8],2)
-            temp_dict = {'symbol':symbol,'price':depth.iat[0,3],'price_floor':down_price,'down_tier':down_tier,'agg_floor':down_agg_qty,'price_ceiling':up_price,'up_tier':up_tier,'agg_ceiling':up_agg_qty,'mktCap':cap}
+            price = depth.iat[0,3]
+            # print('price:  ',price)
+            # 用ticksize 值进行round 
+            round_value = mkt_cap[mkt_cap['symbol']==symbol]['tickSize'].values[0]
+            # print(round_value)
+            upTo_price = round(price * (1+threadshold),round_value)
+            downTo_price = round(price * (1-threadshold),round_value)
+            # 取up and down 0.5% 最小的cum qty
+            # print('price:',price,'upTo_price:',upTo_price)
+            if (len(depth[depth['ask_p'] == upTo_price].index) >0) and len(depth[depth['bid_p'] == downTo_price].index)>0:
+                bid_row = depth.loc[max(depth[depth['ask_p'] == upTo_price].index[0],depth[depth['bid_p'] == downTo_price].index[0]),'bidQty_cum']
+                ask_row = depth.loc[max(depth[depth['ask_p'] == upTo_price].index[0],depth[depth['bid_p'] == downTo_price].index[0]),'askQty_cum']
+                suggested_maxQty = min(ask_row,bid_row)
+            else:
+                suggested_maxQty = cap
+            temp_dict = {'symbol':symbol,'price':price,'price_floor':down_price,'down_tier':down_tier,'agg_floor':down_agg_qty,'price_ceiling':up_price,'up_tier':up_tier,'agg_ceiling':up_agg_qty,'mktCap':cap,'suggested_maxQty':suggested_maxQty}
             result_container.append(temp_dict)
         except Exception as e:
             print(url)
@@ -67,12 +99,12 @@ def main():
     
     data = pd.DataFrame(result_container)
     
-    data = data[['symbol','price','price_floor','down_tier','agg_floor','price_ceiling','up_tier','agg_ceiling','mktCap']]
+    data = data[['symbol','price','price_floor','down_tier','agg_floor','price_ceiling','up_tier','agg_ceiling','mktCap','suggested_maxQty']]
     
     data['up_impact%'] = round(abs((data['price_ceiling'] - data['price']) /data['price'])*100,2)
     data['down_impact%'] = round(abs((data['price_floor'] - data['price']) /data['price'])*100,2)
     condi = (data['up_impact%'] >1) | (data['down_impact%']>1)
-    return data[condi].sort_values(by=['up_impact%','down_impact%'],ascending=False)
+    data[condi].sort_values(by=['up_impact%','down_impact%'],ascending=False)
 
 if __name__ == "__main__":
     main()
