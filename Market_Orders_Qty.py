@@ -1,9 +1,7 @@
 import pandas as pd 
 import requests 
 
-def main():
-    def get_decimalNumber(decimal_str):
-    '''Function to get number of decimals'''
+def get_decimalNumber(decimal_str):
     # split 
     parts = decimal_str.split('.')
 
@@ -15,7 +13,10 @@ def main():
     else:
         count = 0  # return 0, if no decimals
     return count 
+
+def main():
     
+    threadshold = 0.005
     # get exchange info data, all UM trading symbols
     exchangeInfo_url = "https://fapi.binance.com/fapi/v1/exchangeInfo"
     exchangeInfo = [x for x in requests.get(exchangeInfo_url).json()['symbols'] if x['status']=='TRADING']
@@ -104,7 +105,7 @@ def main():
     data['up_impact%'] = round(abs((data['price_ceiling'] - data['price']) /data['price'])*100,2)
     data['down_impact%'] = round(abs((data['price_floor'] - data['price']) /data['price'])*100,2)
     condi = (data['up_impact%'] >1) | (data['down_impact%']>1)
-    data[condi].sort_values(by=['up_impact%','down_impact%'],ascending=False)
+    return data[condi].sort_values(by=['up_impact%','down_impact%'],ascending=False)
 
 if __name__ == "__main__":
     main()
